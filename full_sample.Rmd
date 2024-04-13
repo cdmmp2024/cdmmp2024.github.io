@@ -1,0 +1,940 @@
+---
+title: "Developing Countries with Net-Zero Target"
+author: "CDMMP"
+output: 
+  html_document:
+      toc: true
+      toc_float: true
+  
+---
+```{r setup, include=FALSE}
+version <- "04042024_v6"
+N <- 104
+J <- 34
+
+# Loading libraries
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(R.matlab)
+library(readxl)
+library(cowplot)
+library(patchwork)
+library(ggthemes)
+library(ggrepel)
+
+# Setting working directories
+PROJECT <- dirname(dirname(getwd()))
+DATA <- file.path(PROJECT, "data")
+OUTPUT <- file.path(PROJECT, "output")
+knitr::opts_chunk$set(dev="png")
+```
+
+```{r, echo = F}
+
+Outliers_Part2 <- function(plot){
+  
+  plot_build <- ggplot_build(plot)
+  
+  # Extract outlier data
+  outlier_country <- c()
+  outlier_name <- c()
+  outlier_group <- c()
+  outlier <- plot_build$data[[1]]$outliers
+  for (i in c(1:length(outlier))){
+    outlier_country[[i]] <- 
+      national_emissions_hat[national_emissions_hat$value %in% outlier[[i]],"code"]
+    outlier_name[[i]] <-
+      national_emissions_hat[national_emissions_hat$value %in% outlier[[i]],"name"]
+    outlier_group[[i]] <-
+      national_emissions_hat[national_emissions_hat$value %in% outlier[[i]],"group"]
+  }
+  
+  outlier_annotations<-
+  data.frame(value = unlist(outlier),
+             country = unlist(outlier_country),
+             name = unlist(outlier_name),
+             group = unlist(outlier_group))
+  
+  plot + 
+    geom_text_repel(data = outlier_annotations,
+                    aes(x = interaction(group, name), y = value, label = country),
+                    box.padding = 0.35, point.padding = 0.5,
+                    min.segment.length = unit(0, 'lines'),
+                    size = 3) 
+
+}
+
+
+Outliers <- function(data, plot){
+  
+  plot_build <- ggplot_build(plot)
+  
+  # Extract outlier data
+  outlier_country <- c()
+  outlier_name <- c()
+  outlier_group <- c()
+  outlier_trade_flow <- c()
+  outlier_coalition <- c()
+  outlier <- plot_build$data[[1]]$outliers
+  for (i in c(1:length(outlier))){
+    outlier_country[[i]] <- 
+      data[data$value %in% outlier[[i]],"code"]
+    outlier_name[[i]] <-
+      data[data$value %in% outlier[[i]],"name"]
+    outlier_group[[i]] <-
+      data[data$value %in% outlier[[i]],"group"]
+    outlier_trade_flow[[i]] <-
+      data[data$value %in% outlier[[i]],"trade_flow"]
+    outlier_coalition[[i]] <-
+      data[data$value %in% outlier[[i]],"coalition"]
+  }
+  
+  if (length(outlier_trade_flow) == 0){
+    outlier_trade_flow <- outlier_group
+
+  }
+  if (length(outlier_coalition) == 0){
+    outlier_coalition <- outlier_group
+  }
+  
+  outlier_annotations<-
+  data.frame(value = unlist(outlier),
+             country = unlist(outlier_country),
+             name = unlist(outlier_name),
+             group = unlist(outlier_group),
+             trade_flow = unlist(outlier_trade_flow),
+             coalition = unlist(outlier_coalition))
+  
+  return(outlier_annotations)
+  
+  
+}
+```
+
+
+# Summary 
+This script synthesizes the results for different domestic and trade carbon policies in 48 developing countries with net-zero emissions targets.
+
+These results assume a social cost of carbon equal to \$190 and a carbon price equal to [\${carbon}](carbon_price_selection.html) (click here to view the results at different carbon prices).
+
+The countries we study are listed below. Each link will take you to an in-depth, country level analysis. 
+
+```{r, echo=F, results='asis'}
+countries <- read_excel(file.path(DATA, 
+                                  paste0("dictionary_GTAP_", version, ".xlsx")), 
+                        sheet = "Developing")
+countries <- rbind(data.frame(id = 0, code = "ALL", country="All"), countries)
+for(c in c(1:nrow(countries))) {
+  cat("- ", paste0("[",countries$country[c], "](", countries$code[c], "_{carbon}.html)"),
+      "\n")
+}
+```
+
+
+Our counterfactuals are split into two parts.
+
+**Part 1**
+
+CTF1: Setting tariffs to bilateral mean (Shapiro)
+
+CTF2: Setting tariffs to OECD mean
+
+CTF3: Carbon policy
+
+CTF4: Carbon policy + CBAM
+
+**Part 2** 
+
+CTF5: Large country coalition
+
+CTF6: Large country coalition + developing country respond with equivalence
+
+CTF7: Large country coalition + developing country respond without equivalence
+
+```{r, include=FALSE, warning=F}
+# Loading ID data
+countries <- read_excel(file.path(DATA, 
+                                  paste0("dictionary_GTAP_", version, ".xlsx")), 
+                        sheet = "Developing")
+sectors <- read_excel(file.path(DATA, 
+                                paste0("dictionary_GTAP_",version,".xlsx")), 
+                      sheet = "labels_sec")
+LAC <- read_excel(file.path(DATA, 
+                            paste0("dictionary_GTAP_", version, ".xlsx")), 
+                  sheet = "LAC")
+Eurasia <- read_excel(file.path(DATA, 
+                            paste0("dictionary_GTAP_", version, ".xlsx")), 
+                  sheet = "Eurasia")
+Africa <- read_excel(file.path(DATA, 
+                            paste0("dictionary_GTAP_", version, ".xlsx")), 
+                  sheet = "Africa")
+Regions <- rbind(LAC, Eurasia, Africa)
+
+colnames(sectors) <- c("id", "code", "sector")
+
+
+CTF1 <-
+  c("Bilateral mean",
+    "OECD mean",
+    "Carbon policy (EITE + CO2)",
+    "Carbon policy + CBAM (EITE + CO2)",
+    "Carbon policy (ALL + GHG)",
+    "Carbon policy + CBAM (ALL + GHG)")
+CTF2 <-
+    c("No Response",
+    "Response w/ equivalence",
+    "Response w/o equivalence")
+CTF1 <- factor(CTF1, levels = CTF1)
+CTF2 <- factor(CTF2, levels = CTF2)
+# EITE Sectors
+EITE  <- c(15,16,17,20,21,22,28)
+```
+
+# Part 1
+
+```{r, echo = F, warning=F}
+# Now loading in the full sample results for counterfactuals 6 and 7, both of which loop through each country in our sample.
+WELFARE <- c()
+EXPORTS <- c()
+IMPORTS <- c()
+EMISSIONS <- c()
+
+CTF_part1 <-
+  list.files(file.path(
+    OUTPUT,
+    "quantitative",
+    substr(version, nchar(version) - 1, nchar(version)),
+    "full_sample_part1"
+  ))
+contains_carbon_price <- sapply(CTF_part1, function(x) grepl("{carbon}", x))
+CTF_part1 <- CTF_part1[contains_carbon_price]
+
+for (ctf in c(1:length(CTF_part1))) {
+  data <- readMat(file.path(
+    OUTPUT,
+    "quantitative",
+    substr(version, nchar(version) - 1, nchar(version)),
+    "full_sample_part1",
+    CTF_part1[ctf]
+  ))
+  
+  WELFARE <- rbind(WELFARE,
+                   data.frame(
+                     name = CTF1[ctf],
+                     value = (data$WELFARE - 1) * 100,
+                     country = countries$id
+                   ))
+  EXPORTS <- rbind(EXPORTS,
+                   data.frame(
+                     name = CTF1[ctf],
+                     value = (data$EXPORTS - 1) * 100,
+                     country = countries$id
+                   ))
+  
+  IMPORTS <- rbind(IMPORTS,
+                   data.frame(
+                     name = CTF1[ctf],
+                     value = (data$IMPORTS - 1) * 100,
+                     country = countries$id
+                   ))
+  EMISSIONS <- rbind(EMISSIONS,
+                     data.frame(
+                       name = CTF1[ctf],
+                       value = (data$EMISSIONS - 1) * 100,
+                       country = countries$id
+                     ))
+  
+}
+
+EXPORTS$trade_flow <- "Export"
+IMPORTS$trade_flow <- "Import"
+TRADE_FLOWS <- rbind(EXPORTS, IMPORTS)
+
+
+WELFARE <-
+  merge(WELFARE,
+        Regions,
+        by.x = "country",
+        by.y = "id",
+        all.x = T)
+EXPORTS <-
+  merge(EXPORTS,
+        Regions,
+        by.x = "country",
+        by.y = "id",
+        all.x = T)
+IMPORTS <-
+  merge(IMPORTS,
+        Regions,
+        by.x = "country",
+        by.y = "id",
+        all.x = T)
+TRADE_FLOWS <-
+  merge(TRADE_FLOWS,
+        Regions,
+        by.x = "country",
+        by.y = "id",
+        all.x = T)
+EMISSIONS <-
+  merge(EMISSIONS,
+        Regions,
+        by.x = "country",
+        by.y = "id",
+        all.x = T)
+
+```
+
+## Welfare
+
+```{r, echo=F, fig.width=12, warning=F}
+WELFARE_PLOT <-
+  ggplot(WELFARE, aes(x = name, y = value)) +
+  geom_boxplot(outlier.shape = 1,
+               width = .25,
+               fill = "gray") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(x = "",
+       y = "Welfare change (%)",
+       title = "% Change in welfare by counterfactual") +
+  theme(axis.text.x = element_text(angle = 25, vjust = .5)) +
+  theme_hc()
+outlier_annotations <- Outliers(WELFARE, WELFARE_PLOT)
+
+(
+  WELFARE_PLOT <-
+    WELFARE_PLOT +
+    geom_text_repel(
+      data = outlier_annotations,
+      aes(x = name, y = value, label = country),
+      box.padding = 0.35,
+      point.padding = 0.5,
+      min.segment.length = unit(0, 'lines'),
+      size = 3
+    )
+)
+
+```
+
+
+
+```{r, echo=F, fig.width=10, fig.height=10, warning=F}
+WELFARE_REGION_PLOT <-
+  ggplot(WELFARE, aes(
+    x = interaction(group, name),
+    y = value,
+    fill = group
+  )) +
+  geom_boxplot(outlier.shape = 1, width = .5) +
+  facet_wrap(~ name, scales = "free_x", ncol = 2) + 
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  scale_fill_grey(start = .3, end = 1) +
+  labs(x = "",
+       y = "Welfare change (%)",
+       title = "% Change in welfare by counterfactual",
+       fill = "Region") +
+  theme_hc()
+outlier_annotations <- Outliers(WELFARE, WELFARE_REGION_PLOT)
+
+
+(
+  WELFARE_REGION_PLOT <-
+    WELFARE_REGION_PLOT +
+    geom_text_repel(
+      data = outlier_annotations,
+      aes(
+        x = interaction(group,name),
+        y = value,
+        label = country
+      ),
+      box.padding = 0.35,
+      point.padding = 0.5,
+      min.segment.length = unit(0, 'lines'),
+      size = 3
+    ) + 
+    scale_x_discrete(labels = rep(c("Africa", "Eurasia", "LAC"), length(CTF_part1)))
+)
+
+```
+
+## Trade flows
+
+```{r, echo=FALSE, fig.width=10, fig.height=10, warning=F}
+TRADE_FLOWS_PLOT <-
+ggplot(TRADE_FLOWS, aes(x = interaction(trade_flow,name), y = value, fill = trade_flow)) +
+  geom_boxplot(outlier.shape = 1, width=.5) +
+  facet_wrap(~name, ncol = 2, scale = "free_x") + 
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  scale_fill_grey(start=.3, end=1) +
+  labs(x = "", 
+       y = "Multilateral changes in trade (%)", 
+       title = "% Change in multilateral trade flows by counterfactual",
+       fill = "Trade flows") + 
+  theme_hc()
+
+
+outlier_annotations <- Outliers(TRADE_FLOWS, TRADE_FLOWS_PLOT)
+
+(TRADE_FLOWS_PLOT <-
+  TRADE_FLOWS_PLOT + 
+    geom_text_repel(data = outlier_annotations,
+                    aes(x = interaction(trade_flow, name), y = value, label = country),
+                    box.padding = 0.35, point.padding = 0.5,
+                    min.segment.length = unit(0, 'lines'),
+                    size = 3)) + 
+  scale_x_discrete(labels = rep(c("Exports", "Imports", length(CTF_part1))))
+
+```
+
+```{r, echo = F, fig.width=10, fig.height=10, warning=F}
+EXPORTS_PLOT <-
+ggplot(EXPORTS, aes(x = interaction(group, name), y = value, fill = group)) +
+  geom_boxplot(outlier.shape = 1, width=.5) +
+  facet_wrap(~name, ncol = 2, scale = "free_x") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  scale_fill_grey(start=.3, end=1) +
+  labs(x = "",
+       y = "Changes in exports (%)",
+       title = "% Change in exports by counterfactual and region",
+       fill = "Region") +
+  theme_hc()
+outlier_annotations <- Outliers(EXPORTS, EXPORTS_PLOT)
+
+(EXPORTS_PLOT<-
+  EXPORTS_PLOT +
+    geom_text_repel(data = outlier_annotations,
+                    aes(x = interaction(group, name), y = value, label = country),
+                    box.padding = 0.35, point.padding = 0.5,
+                    min.segment.length = unit(0, 'lines'),
+                    size = 3) +
+    scale_x_discrete(labels = rep(c("Africa", "Eurasia", "LAC"), length(CTF_part1))))
+
+
+IMPORTS_PLOT <-
+ggplot(IMPORTS, aes(x = interaction(group, name), y = value, fill = group)) +
+  geom_boxplot(outlier.shape = 1, width=.5) +
+  facet_wrap(~name, ncol = 2, scale = "free_x") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  scale_fill_grey(start=.3, end=1) +
+  labs(x = "",
+       y = "Changes in imports (%)",
+       title = "% Change in imports by counterfactual and region",
+       fill = "Region") +
+  theme_hc()
+outlier_annotations <- Outliers(IMPORTS, IMPORTS_PLOT)
+
+(IMPORTS_PLOT<-
+  IMPORTS_PLOT +
+    geom_text_repel(data = outlier_annotations,
+                    aes(x = interaction(group, name), y = value, label = country),
+                    box.padding = 0.35, point.padding = 0.5,
+                    min.segment.length = unit(0, 'lines'),
+                    size = 3) +
+    scale_x_discrete(labels = rep(c("Africa", "Eurasia", "LAC"), length(CTF_part1))))
+
+```
+
+```{r, echo = F, fig.width=12, warning=F}
+EMISSIONS_PLOT <-
+ggplot(EMISSIONS, aes(x = name, y = value)) +
+  geom_boxplot(fill = "gray", width = 0.5, outlier.shape = 1) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(x = "",
+       y = "Change in GHG emissions (%)",
+       title = "% Change in GHG emissions by counterfactual") +
+  theme_hc()
+
+outlier_annotations <- Outliers(EMISSIONS, EMISSIONS_PLOT)
+
+(EMISSIONS_PLOT<-
+  EMISSIONS_PLOT +
+    geom_text_repel(data = outlier_annotations,
+                    aes(x = name, y = value, label = country),
+                    box.padding = 0.35, point.padding = 0.5,
+                    min.segment.length = unit(0, 'lines'),
+                    size = 3))
+```
+
+## Emissions
+
+```{r, echo = F, fig.width=10, fig.height=10, warning=F}
+EMISSIONS_REGIONS_PLOT <-
+ggplot(EMISSIONS, aes(x = interaction(group, name), y = value, fill = group)) +
+  geom_boxplot(outlier.shape = 1, width=.5) +
+  facet_wrap(~name, ncol = 2, scale = "free_x") +
+  scale_fill_grey(start=.3, end=1) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(x = "",
+       y = "Changes in GHG emissions (%)",
+       title = "% Change in GHG emissions by counterfactual and region",
+       fill = "Region") +
+  theme_hc()
+
+outlier_annotations <- Outliers(EMISSIONS, EMISSIONS_REGIONS_PLOT)
+
+(EMISSIONS_REGIONS_PLOT<-
+  EMISSIONS_REGIONS_PLOT +
+    geom_text_repel(data = outlier_annotations,
+                    aes(x = interaction(group, name), y = value, label = country),
+                    box.padding = 0.35, point.padding = 0.5,
+                    min.segment.length = unit(0, 'lines'),
+                    size = 3) +
+    scale_x_discrete(labels = rep(c("Africa", "Eurasia", "LAC"), length(CTF_part1))))
+
+
+```
+
+
+# Part 2
+
+```{r, echo=FALSE, fig.width=12, warning=F}
+# This first section deals with counterfactual 5. Since it's not looping through each country, we can just load the matrix in one.
+
+CTF_part2 <-
+  list.files(file.path(
+    OUTPUT,
+    "quantitative",
+    substr(version, nchar(version) - 1, nchar(version)),
+    "full_sample_part2"
+  ))
+contains_carbon_price <- sapply(CTF_part2, function(x) grepl("{carbon}", x))
+CTF_part2 <- CTF_part2[contains_carbon_price]
+
+WELFARE <- c()
+EXPORTS <- c()
+IMPORTS <- c()
+EXPORTS_COALITION <- c()
+IMPORTS_COALITION <- c()
+EXPORTS_NO_COALITION <- c()
+IMPORTS_NO_COALITION <- c()
+EMISSIONS <- c()
+
+
+
+# data <- readMat(file.path(OUTPUT, "quantitative",
+# substr(version, nchar(version)-1, nchar(version)),
+# paste0("CTF",toString(ctf),"_{carbon}_", ctf_group, ".mat")))
+data <- readMat(file.path(
+  OUTPUT,
+  "quantitative",
+  substr(version, nchar(version) - 1, nchar(version)),
+  "full_sample_part2",
+  CTF_part2[1]
+))
+
+
+W_hat <- data.frame(name = (data$W.hat.GHG[countries$id] - 1) * 100)
+W_hat <- pivot_longer(W_hat, cols = c("name"))
+W_hat$name <- CTF2[1]
+W_hat$country <- countries$id
+WELFARE <- rbind(WELFARE, W_hat)
+
+E_N_hat <- data.frame(name = (data$E.N.hat[countries$id] - 1) * 100)
+E_N_hat <- pivot_longer(E_N_hat, cols = c("name"))
+E_N_hat$name <- CTF2[1]
+E_N_hat$country <- countries$id
+EXPORTS <- rbind(EXPORTS, E_N_hat)
+
+M_N_hat <- data.frame(name = (data$M.N.hat[countries$id] - 1) * 100)
+M_N_hat <- pivot_longer(M_N_hat, cols = c("name"))
+M_N_hat$name <- CTF2[1]
+M_N_hat$country <- countries$id
+IMPORTS <- rbind(IMPORTS, M_N_hat)
+
+E_N_coalition_hat <- data.frame(name = (data$E.coalition.hat - 1) * 100)
+E_N_coalition_hat <- pivot_longer(E_N_coalition_hat, cols = c("name"))
+E_N_coalition_hat$name <- CTF2[1]
+E_N_coalition_hat$country <- countries$id
+EXPORTS_COALITION <- rbind(EXPORTS_COALITION, E_N_coalition_hat)
+
+E_N_no_coalition_hat <- data.frame(name = (data$E.no.coalition.hat - 1) * 100)
+E_N_no_coalition_hat <- pivot_longer(E_N_no_coalition_hat, cols = c("name"))
+E_N_no_coalition_hat$name <- CTF2[1]
+E_N_no_coalition_hat$country <- countries$id
+EXPORTS_NO_COALITION <- rbind(EXPORTS_NO_COALITION, E_N_no_coalition_hat)
+
+M_N_coalition_hat <- data.frame(name = (data$M.coalition.hat - 1) * 100)
+M_N_coalition_hat <- pivot_longer(M_N_coalition_hat, cols = c("name"))
+M_N_coalition_hat$name <- CTF2[1]
+M_N_coalition_hat$country <- countries$id
+IMPORTS_COALITION <- rbind(IMPORTS_COALITION, M_N_coalition_hat)
+
+M_N_no_coalition_hat <- data.frame(name = (data$M.no.coalition.hat - 1) * 100)
+M_N_no_coalition_hat <- pivot_longer(M_N_no_coalition_hat, cols = c("name"))
+M_N_no_coalition_hat$name <- CTF2[1]
+M_N_no_coalition_hat$country <- countries$id
+IMPORTS_NO_COALITION <- rbind(IMPORTS_NO_COALITION, M_N_no_coalition_hat)
+
+national_emissions_hat <-
+  data.frame(name = (data$national.emissions.GHG.hat[countries$id] - 1) *
+               100)
+national_emissions_hat <-
+  pivot_longer(national_emissions_hat, cols = c("name"))
+national_emissions_hat$name <- CTF2[1]
+national_emissions_hat$country <- countries$id
+EMISSIONS <- rbind(EMISSIONS, national_emissions_hat)
+
+```
+
+```{r, echo = F, warning=F}
+# Now loading in the full sample results for counterfactuals 6 and 7, both of which loop through each country in our sample.
+
+for (ctf in c(2: length(CTF_part2))) {
+  data <- readMat(file.path(
+    OUTPUT,
+    "quantitative",
+    substr(version, nchar(version) - 1, nchar(version)),
+    "full_sample_part2",
+    CTF_part2[ctf]
+  ))
+
+  WELFARE <- rbind(WELFARE,
+                   data.frame(
+                     name = CTF2[ctf],
+                     value = (data$WELFARE - 1) * 100,
+                     country = countries$id
+                   ))
+  
+  EXPORTS <- rbind(EXPORTS,
+                   data.frame(
+                     name = CTF2[ctf],
+                     value = (data$EXPORTS - 1) * 100,
+                     country = countries$id
+                   ))
+  
+  IMPORTS <- rbind(IMPORTS,
+                   data.frame(
+                     name = CTF2[ctf],
+                     value = (data$IMPORTS - 1) * 100,
+                     country = countries$id
+                   ))
+  
+  EXPORTS_COALITION <- rbind(EXPORTS_COALITION,
+                             data.frame(
+                               name = CTF2[ctf],
+                               value = (data$E.COALITION-1)*100,
+                               country = countries$id
+                             ))
+
+  EXPORTS_NO_COALITION <- rbind(EXPORTS_NO_COALITION,
+                             data.frame(
+                               name = CTF2[ctf], 
+                               value = (data$E.NO.COALITION-1)*100,
+                               country = countries$id
+                             ))
+
+  IMPORTS_COALITION <- rbind(IMPORTS_COALITION,
+                             data.frame(
+                               name = CTF2[ctf],
+                               value = (data$M.COALITION-1)*100,
+                               country = countries$id
+                             ))
+
+  IMPORTS_NO_COALITION <- rbind(IMPORTS_NO_COALITION,
+                             data.frame(
+                               name = CTF2[ctf], 
+                               value = (data$M.NO.COALITION-1)*100,
+                               country = countries$id
+                             ))
+  
+  EMISSIONS <- rbind(EMISSIONS,
+                     data.frame(
+                       name = CTF2[ctf],
+                       value = (data$EMISSIONS - 1) * 100,
+                       country = countries$id
+                     ))
+
+}
+
+EXPORTS$trade_flow <- "Export"
+IMPORTS$trade_flow <- "Import"
+TRADE_FLOWS <- rbind(EXPORTS, IMPORTS)
+
+EXPORTS_COALITION$trade_flow <- "Export"
+EXPORTS_NO_COALITION$trade_flow <- "Export"
+
+EXPORTS_COALITION$coalition <- "Coalition"
+EXPORTS_NO_COALITION$coalition <- "No Coalition"
+
+IMPORTS_COALITION$trade_flow <- "Import"
+IMPORTS_NO_COALITION$trade_flow <- "Import"
+
+IMPORTS_COALITION$coalition <- "Coalition"
+IMPORTS_NO_COALITION$coalition <- "No Coalition"
+
+TRADE_FLOWS <- rbind(EXPORTS, IMPORTS)
+TRADE_FLOWS_COALITION <- rbind(EXPORTS_COALITION, EXPORTS_NO_COALITION,
+                               IMPORTS_COALITION, IMPORTS_NO_COALITION)
+
+
+
+
+WELFARE <-
+  merge(WELFARE,
+        Regions,
+        by.x = "country",
+        by.y = "id",
+        all.x = T)
+EXPORTS <-
+  merge(EXPORTS,
+        Regions,
+        by.x = "country",
+        by.y = "id",
+        all.x = T)
+IMPORTS <-
+  merge(IMPORTS,
+        Regions,
+        by.x = "country",
+        by.y = "id",
+        all.x = T)
+TRADE_FLOWS <-
+  merge(TRADE_FLOWS,
+        Regions,
+        by.x = "country",
+        by.y = "id",
+        all.x = T)
+TRADE_FLOWS_COALITION <-
+  merge(TRADE_FLOWS_COALITION,
+        Regions,
+        by.x = "country",
+        by.y = "id",
+        all.x = T)
+EMISSIONS <-
+  merge(EMISSIONS,
+        Regions,
+        by.x = "country",
+        by.y = "id",
+        all.x = T
+  )
+
+```
+
+## Welfare
+
+```{r, echo=F, fig.width=12, warning=F}
+WELFARE_PLOT <-
+  ggplot(WELFARE, aes(x = name, y = value)) +
+  geom_boxplot(outlier.shape = 1,
+               width = .25,
+               fill = "gray") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(x = "",
+       y = "Welfare change (%)",
+       title = "% Change in welfare by counterfactual") +
+  theme_hc()
+outlier_annotations <- Outliers(WELFARE, WELFARE_PLOT)
+
+(
+  WELFARE_PLOT <-
+    WELFARE_PLOT +
+    geom_text_repel(
+      data = outlier_annotations,
+      aes(x = name, y = value, label = country),
+      box.padding = 0.35,
+      point.padding = 0.5,
+      min.segment.length = unit(0, 'lines'),
+      size = 3
+    )
+)
+
+
+WELFARE_REGION_PLOT <-
+  ggplot(WELFARE, aes(
+    x = interaction(group, name),
+    y = value,
+    fill = group
+  )) +
+  geom_boxplot(outlier.shape = 1, width = .5) +
+  facet_wrap(~ name, scales = "free_x", nrow = 1) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  scale_fill_grey(start = .3, end = 1) +
+  labs(x = "",
+       y = "Welfare change (%)",
+       title = "% Change in welfare by counterfactual",
+       fill = "Region") +
+  theme_hc()
+outlier_annotations <- Outliers(WELFARE, WELFARE_REGION_PLOT)
+
+
+(
+  WELFARE_REGION_PLOT <-
+    WELFARE_REGION_PLOT +
+    geom_text_repel(
+      data = outlier_annotations,
+      aes(
+        x = interaction(group,name),
+        y = value,
+        label = country
+      ),
+      box.padding = 0.35,
+      point.padding = 0.5,
+      min.segment.length = unit(0, 'lines'),
+      size = 3
+    ) +
+    scale_x_discrete(labels = rep(c("Africa", "Eurasia", "LAC"), length(CTF_part2)))
+)
+```
+
+```{r, echo=FALSE, fig.width=12, warning=F}
+ggplot(WELFARE[WELFARE$name == "No Response", ], aes(x = reorder(code, value), y = value)) +
+  geom_bar(stat = "identity", fill="darkgray") +
+  geom_point(data = WELFARE[WELFARE$name != "No Response", ],
+             aes(x = code, y = value, shape = name), size = 2) +
+  labs(x = "", y = "Welfare change %", shape = "", title = "% Change in welfare by counterfactual and country") + 
+  theme(axis.text.x = element_text(angle = 25)) + 
+  theme_hc()
+
+
+WELFARE_SCATTER <- pivot_wider(WELFARE[WELFARE$name != "No Response", ])
+
+ggplot(WELFARE_SCATTER) +
+  geom_text(aes(x=`Response w/ equivalence`, y = `Response w/o equivalence`, label = code, color = group), size = 2) +
+  labs(color = "", title = "% Change in Welfare: w/o equivalence vs w/ equivalence") +
+  geom_abline(intercept = 0, slope = 1) +
+  geom_hline(yintercept = 0, color = "gray") +
+  geom_vline(xintercept = 0, color = "gray") +
+  theme_hc()
+```
+
+## Trade flows
+
+```{r, echo=FALSE, fig.width=10, fig.height=10, warning=F}
+TRADE_FLOWS_PLOT <-
+ggplot(TRADE_FLOWS, aes(x = interaction(trade_flow,name), y = value, fill = trade_flow)) +
+  geom_boxplot(outlier.shape = 1, width=.5) +
+  facet_wrap(~name, nrow = 1, scale = "free_x") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  scale_fill_grey(start=.3, end=1) +
+  labs(x = "",
+       y = "Multilateral changes in trade (%)",
+       title = "% Change in multilateral trade flows by counterfactual",
+       fill = "Trade flows") +
+  theme_hc()
+
+outlier_annotations <- Outliers(TRADE_FLOWS, TRADE_FLOWS_PLOT)
+
+(TRADE_FLOWS_PLOT <-
+  TRADE_FLOWS_PLOT +
+    geom_text_repel(data = outlier_annotations,
+                    aes(x = interaction(trade_flow, name), y = value, label = country),
+                    box.padding = 0.35, point.padding = 0.5,
+                    min.segment.length = unit(0, 'lines'),
+                    size = 3)) +
+  scale_x_discrete(labels = rep(c("Exports", "Imports", length(CTF_part2))))
+
+
+(TRADE_FLOWS_COALITION_PLOT <-
+ggplot(TRADE_FLOWS_COALITION, aes(x = name, y = value, fill = trade_flow)) +
+  geom_boxplot(outlier.shape = 1, width=.5) +
+  facet_wrap(~interaction(coalition, name), scale = "free_x", ncol = 2) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  scale_fill_grey(start=.3, end=1) +
+  labs(x = "",
+       y = "Multilateral changes in trade (%)",
+       title = "% Change in multilateral trade flows within and outside of coalition",
+       fill = "") +
+  scale_x_discrete(labels = c(""))+
+  theme_hc())
+
+
+
+```
+
+```{r, echo = F, fig.width=12, warning=F}
+EXPORTS_PLOT <-
+ggplot(EXPORTS, aes(x = interaction(group, name), y = value, fill = group)) +
+  geom_boxplot(outlier.shape = 1, width=.5) +
+  facet_wrap(~name, nrow = 1, scale = "free_x") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  scale_fill_grey(start=.3, end=1) +
+  labs(x = "",
+       y = "Changes in exports (%)",
+       title = "% Change in exports by counterfactual and region",
+       fill = "Region") +
+  theme_hc()
+outlier_annotations <- Outliers(EXPORTS, EXPORTS_PLOT)
+
+(EXPORTS_PLOT<-
+  EXPORTS_PLOT +
+    geom_text_repel(data = outlier_annotations,
+                    aes(x = interaction(group, name), y = value, label = country),
+                    box.padding = 0.35, point.padding = 0.5,
+                    min.segment.length = unit(0, 'lines'),
+                    size = 3) +
+    scale_x_discrete(labels = rep(c("Africa", "Eurasia", "LAC"), length(CTF_part2))))
+
+
+IMPORTS_PLOT <-
+ggplot(IMPORTS, aes(x = interaction(group, name), y = value, fill = group)) +
+  geom_boxplot(outlier.shape = 1, width=.5) +
+  facet_wrap(~name, nrow = 1, scale = "free_x") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  scale_fill_grey(start=.3, end=1) +
+  labs(x = "",
+       y = "Changes in imports (%)",
+       title = "% Change in imports by counterfactual and region",
+       fill = "Region") +
+  theme_hc()
+outlier_annotations <- Outliers(IMPORTS, IMPORTS_PLOT)
+
+(IMPORTS_PLOT<-
+  IMPORTS_PLOT +
+    geom_text_repel(data = outlier_annotations,
+                    aes(x = interaction(group, name), y = value, label = country),
+                    box.padding = 0.35, point.padding = 0.5,
+                    min.segment.length = unit(0, 'lines'),
+                    size = 3) +
+    scale_x_discrete(labels = rep(c("Africa", "Eurasia", "LAC"), length(CTF_part2))))
+
+```
+
+## Emissions 
+
+```{r, echo = F, fig.width=12}
+EMISSIONS_PLOT <-
+ggplot(EMISSIONS, aes(x = name, y = value)) +
+  geom_boxplot(fill = "gray", width = 0.5, outlier.shape = 1) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(x = "",
+       y = "Change in GHG emissions (%)",
+       title = "% Change in GHG emissions by counterfactual") +
+  theme_hc()
+
+outlier_annotations <- Outliers(EMISSIONS, EMISSIONS_PLOT)
+
+(EMISSIONS_PLOT<-
+  EMISSIONS_PLOT +
+    geom_text_repel(data = outlier_annotations,
+                    aes(x = name, y = value, label = country),
+                    box.padding = 0.35, point.padding = 0.5,
+                    min.segment.length = unit(0, 'lines'),
+                    size = 3))
+
+EMISSIONS_REGIONS_PLOT <-
+ggplot(EMISSIONS, aes(x = interaction(group, name), y = value, fill = group)) +
+  geom_boxplot(outlier.shape = 1, width=.5) +
+  facet_wrap(~name, nrow = 1, scale = "free_x") +
+  scale_fill_grey(start=.3, end=1) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(x = "",
+       y = "Changes in GHG emissions (%)",
+       title = "% Change in GHG emissions by counterfactual and region",
+       fill = "Region") +
+  theme_hc()
+
+outlier_annotations <- Outliers(EMISSIONS, EMISSIONS_REGIONS_PLOT)
+
+(EMISSIONS_REGIONS_PLOT<-
+  EMISSIONS_REGIONS_PLOT +
+    geom_text_repel(data = outlier_annotations,
+                    aes(x = interaction(group, name), y = value, label = country),
+                    box.padding = 0.35, point.padding = 0.5,
+                    min.segment.length = unit(0, 'lines'),
+                    size = 3) +
+    scale_x_discrete(labels = rep(c("Africa", "Eurasia", "LAC"), length(CTF_part2))))
+
+
+```
+
+
+

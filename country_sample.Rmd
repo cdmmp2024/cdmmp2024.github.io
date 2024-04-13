@@ -1,0 +1,878 @@
+---
+title: "{country}"
+author: "CDMMP"
+date: "2024-03-29"
+output: 
+  html_document:
+      toc: true
+      toc_depth: 2
+      toc_float: 
+        collapsed: false
+      css: "style.css"
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+version <- "04042024_v6"
+N <- 104
+J <- 34
+
+
+# Setting working directories
+PROJECT <- dirname(dirname(getwd()))
+DATA <- file.path(PROJECT, "data")
+OUTPUT <- file.path(PROJECT, "output")
+
+# Loading libraries
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(R.matlab)
+library(readxl)
+library(cowplot)
+library(patchwork)
+library(rnaturalearth)
+library(sf)
+library(ggthemes)
+knitr::opts_chunk$set(dev="png")
+```
+
+# {country}
+This script synthesizes the results for different domestic and international carbon policies in {country}. There are two groups of counterfactuals considered: changes in policies in all sectors and how this affects all GHG and changes in policies in only the EITE sectors (paper, petroleum and coke, chemical products, non-metallic minerals, iron and steel, non-ferrous metals, electricity) and how this affects CO2 emissions.
+
+These results assume a social cost of carbon equal to \${carbon} and a carbon price equal to [\${carbon}](carbon_price_selection.html) (click here to view the results at different carbon prices).
+
+The countries we study are listed below. Each link will take you to an in-depth, country level analysis. 
+
+```{r, echo=F, results='asis'}
+countries <- read_excel(file.path(DATA, 
+                                  paste0("dictionary_GTAP_", version, ".xlsx")), 
+                        sheet = "Developing")
+countries <- rbind(data.frame(id = 0, code = "ALL", country="All"), countries)
+for(c in c(1:nrow(countries))) {
+  cat("- ", paste0("[",countries$country[c], "](", countries$code[c], "_{carbon}.html)"),
+      "\n")
+}
+
+countries <- read_excel(file.path(DATA, 
+                                  paste0("dictionary_GTAP_", version, ".xlsx")), 
+                        sheet = "dictionary")[c("original_country", "new_country")]
+
+world <- ne_countries(scale = "medium", returnclass = "sf")
+world <- merge(countries, world, by.x = "original_country", by.y = "iso_a3", all.y = T)
+world <- world[c("new_country", "geometry")]
+```
+
+Our counterfactuals are split into two parts.
+
+**Part 1**
+
+CTF1: Setting tariffs to bilateral mean (Shapiro)
+
+CTF2: Setting tariffs to OECD mean
+
+CTF3: Carbon policy
+
+CTF4: Carbon policy + CBAM
+
+**Part 2** 
+
+CTF5: Large country coalition
+
+CTF6: Large country coalition + developing country respond with equivalence
+
+CTF7: Large country coalition + developing country respond without equivalence
+
+```{r, include=FALSE}
+# Loading ID data
+countries <- read_excel(file.path(DATA, 
+                                  paste0("dictionary_GTAP_", version, ".xlsx")), 
+                        sheet = "All")
+sectors <- read_excel(file.path(DATA, 
+                                paste0("dictionary_GTAP_",version,".xlsx")), 
+                      sheet = "labels_sec")
+colnames(sectors) <- c("id", "code", "sector")
+
+
+CTF1 <-
+  c("Bilateral mean",
+    "OECD mean",
+    "Carbon policy (EITE + CO2)",
+    "Carbon policy + CBAM (EITE + CO2)",
+    "Carbon policy (ALL + GHG)",
+    "Carbon policy + CBAM (ALL + GHG)")
+CTF2 <-
+    c("No Response",
+    "Response w/ equivalence",
+    "Response w/o equivalence")
+
+CTF1 <- factor(CTF1, levels = CTF1)
+CTF2 <- factor(CTF2, levels = CTF2)
+EITE  <- c(15,16,17,20,21,22,28)
+
+
+```
+
+```{r, echo=F}
+CTF_plot_bounds <- function(CTF_plot){
+  var_ylim_max <- c()
+  var_ylim_min <- c()
+  for (ctf in c(1:length(CTF_plot))){
+    var_ylim <- ggplot_build(CTF_plot[[ctf]])$layout$panel_params[[1]]$y.range
+    var_ylim_min[ctf] <- var_ylim[[1]]
+    var_ylim_max[ctf] <- var_ylim[[2]]
+  }
+
+  for (ctf in c(1:length(CTF_plot))){
+    CTF_plot[[ctf]] <- CTF_plot[[ctf]] + ylim(min(var_ylim_min), max(var_ylim_max))
+  }
+
+  return(CTF_plot)
+}
+```
+
+# {country} baseline description
+
+In this section, we describe the baseline characteristics for {country} prior to any counterfactual policies.
+
+```{r, echo=FALSE}
+CTF_country <- "{country}"
+# CTF_country <- "ARG"
+CTF_country <- countries[countries$code == CTF_country,]$id
+
+
+data <- readMat(file.path(OUTPUT, "quantitative", 
+                          substr(version, nchar(version)-1, nchar(version)), toString(CTF_country),
+                              paste0("country_sample_part1/CTF1_{carbon}_ALL_GHG_country_sample.mat")))
+
+# Creating income decomposition in the baseline
+In_tilde_BAU <-
+data.frame(Category = c("Value Added", 
+                        "Deficits",
+                        "Production tax revenue",
+                        "Tariff revenue",
+                        "Consumption tax revenue",
+                        "Material tax revenue",
+                        "Labor tax revenue"),
+           Value = c(data$VAn.BAU[CTF_country],
+                     data$Dn.BAU[CTF_country],
+                     data$R.p.BAU[CTF_country],
+                     data$R.t.BAU[CTF_country],
+                     data$R.c.BAU[CTF_country],
+                     data$R.m.BAU[CTF_country],
+                     data$R.l.BAU[CTF_country]))
+
+# Imports and exports by sector in the baseline
+E_BAU <- data.frame(Sectors = sectors$code,
+                     E = data$GO.BAU[, CTF_country])
+M_BAU <- data.frame(Sectors = sectors$code,
+                     M = data$M.BAU[, CTF_country])
+M_E_BAU <- merge(E_BAU, M_BAU)
+M_E_BAU$E_pct <- (M_E_BAU$E/sum(M_E_BAU$E))*100
+M_E_BAU$M_pct <- (M_E_BAU$M/sum(M_E_BAU$M))*100
+
+# Imports and exports by country in the baseline
+M_E_country_BAU <- data.frame(Countries = countries$code,
+                              Imports = data$M.E.BAU[CTF_country,],
+                              Exports = data$M.E.BAU[, CTF_country])
+
+M_E_country_BAU <- merge(M_E_country_BAU, world, by.x="Countries", by.y="new_country", all.y=T)
+M_E_country_BAU <- st_as_sf(M_E_country_BAU, sf_column_name = "geometry")
+
+
+# Final consumption shares by sector
+alphas <- data.frame(Sectors = sectors$code,
+                     Value = data$alphas[, CTF_country]*100)
+
+# Emissions by sector in the baseline
+emissions_BAU <- 
+data.frame(Sectors = sectors$code,
+           CO2 = data$emissions.CO2.BAU[, CTF_country],
+           CH4 = data$emissions.CH4.BAU[, CTF_country],
+           N2O = data$emissions.N2O.BAU[, CTF_country],
+           FGAS = data$emissions.FGAS.BAU[, CTF_country])
+emissions_BAU <- pivot_longer(emissions_BAU, cols = c("CO2", "CH4", "N2O", "FGAS"))
+
+intensity <- 
+data.frame(Sectors = sectors$code,
+           CO2 = data$intensity.CO2[, CTF_country],
+           GHG = data$intensity.GHG[, CTF_country])
+
+intensity <- pivot_longer(intensity, cols = c("CO2", "GHG"))
+```
+
+## Income
+
+The sources of income can be broken down into 8 categories: Value added, deficits, and revenues from tariffs, production taxes, labor taxes, material taxes, and consumption taxes. The graph below depicts the different sources of income for {country} in the baseline.
+
+```{r, echo=F, fig.width=12, message=F}
+# Creating the stacked bar plot of the baseline income breakdown
+ggplot(In_tilde_BAU, aes(x = "Baseline", y = Value, fill = Category)) +
+  geom_bar(stat = "identity", width = 0.5) +
+  scale_fill_brewer(palette = "RdYlBu") +
+  labs(fill = "", y = "Value", x = "Income",
+       title = paste0(countries$country[CTF_country], " baseline income breakdown")) +
+  theme_hc()
+```
+
+## Trade flows
+
+This section describes the trade flows for {country} by sector and trade partners.
+
+The graph below depicts the imports and exports by sector.
+
+```{r, echo=F, fig.width=12, message=F}
+M_E_BAU_plot <-
+M_E_BAU[c("Sectors", "E", "M")] %>%
+pivot_longer(cols = c(E, M), names_to = "Trade flow", values_to = "Value")
+ggplot(M_E_BAU_plot, aes(x = Sectors, y = Value, fill = `Trade flow`)) +
+  geom_bar(stat = "identity", position = position_dodge(), width = 0.5) +
+  scale_fill_manual(values = c("#D73027","#4575B4")) +
+  labs(y = "Value", x = "",
+       title = paste0(countries$country[CTF_country], " Trade flows by sector")) +
+  theme_hc() 
+  
+
+```
+
+The first map below depicts from where {country} is importing from and the second map depicts to which country they are exporting to. 
+
+```{r, echo=F, fig.width=12, message=F}
+ggplot(data=M_E_country_BAU) +
+  geom_sf(aes(fill = log(Imports))) +
+  theme_minimal() +
+  ggtitle("Imports by country") +
+  scale_fill_viridis_c(option = "cividis")
+```
+
+```{r, echo=F, fig.width=12, message=F}
+ggplot(data=M_E_country_BAU) +
+  geom_sf(aes(fill = log(Exports))) +
+  theme_minimal() +
+  ggtitle("Exports by country") +
+  scale_fill_viridis_c(option = "cividis")
+```
+
+## Final consumption
+
+The graph below represents the final consumption shares for {country} in each sector.
+
+```{r, echo=F, fig.width=12, message=F}
+ggplot(alphas, aes(x = Sectors, y = Value)) +
+  geom_bar(stat = "identity", width = 0.5, fill="#4575b4") +
+  labs(y = "Final consumption shares", x = "Sectors",
+       title = paste0(countries$country[CTF_country], " Final consumption shares by sector")) +
+  theme_hc()
+```
+
+## Emissions
+
+This section describes the level of emissions in {country} from the baseline. There are four greenhouse gasses we consider: CO2, CH4, N2O, and FGAS.The first graph represents the level of emissions by dissaggregated sector and type. The second graph depicts the emissions intensities (tons of CO2 equivalent per dollar produced) due to CO2 and from all GHG. 
+
+```{r, echo=F, fig.width=12, message=F}
+ggplot(emissions_BAU, aes(x = Sectors, y = value, fill = name)) +
+  geom_bar(stat = "identity", width = 0.5) +
+  scale_fill_brewer(palette = "RdYlBu") +
+  labs(fill = "Emission type", y = "Emissions (MtCO2)", x = "Sectors",
+       title = paste0(countries$country[CTF_country], " Emissions by sector and type")) +
+  theme_hc()
+
+ggplot(intensity, aes(x = Sectors, y = value, fill = name)) +
+  geom_bar(stat = "identity", position = position_dodge(), width = 0.5) +
+  scale_fill_manual(values = c("#D73027","#4575B4")) +
+  labs(fill = "Emission type", y = "Emissions intensity (MtCO2/$)", x = "Sectors",
+       title = paste0(countries$country[CTF_country], " Emissions intensity by sector and type")) +
+  theme_hc()
+```
+
+
+# Part 1
+
+This section describes the results from the counterfactual analyses when applied to EITE sectors and only from CO2 emissions. 
+
+```{r, echo=F, fig.width=12, message=F}
+CTF_part1 <- 
+  list.files(file.path(
+    OUTPUT,
+    "quantitative",
+    substr(version, nchar(version) - 1,
+           nchar(version)),
+    toString(CTF_country),
+    "country_sample_part1"
+  ))
+contains_carbon_price <- sapply(CTF_part1, function(x) grepl("{carbon}", x))
+CTF_part1 <- CTF_part1[contains_carbon_price]
+
+In_hat <- c()
+In_tilde <- c() # Income in levels from each counterfactual
+In_tilde_hat <- c() # Income in levels from each counterfactual
+RI_hat <- c() # Change in real income
+P_hat <- c() # Change in sectoral price index
+Pn_hat <- c()
+national_emissions_hat <- c() # Change in national emissions
+emissions_hat <- c() # Change in emissions by sectors
+emissions_hat_plot <- c()
+W_hat <- c()
+M_hat <- c() # Change in imports
+E_hat <- c() # Change in exports
+M_country_hat_plot <- c() # Change in imports and exports by country
+E_country_hat_plot <- c()
+for (ctf in c(1:length(CTF_part1)[1])){
+
+  data <- readMat(file.path(
+    OUTPUT,
+    "quantitative",
+    substr(version, nchar(version) - 1, nchar(version)),
+    toString(CTF_country),
+    "country_sample_part1",
+    CTF_part1[ctf])
+  )
+
+  # Creating income decomposition from the baseline
+  In_tilde_hat <-rbind(In_tilde_hat,
+                       data.frame(Category = c("Value Added", 
+                                               "Production tax revenue", 
+                                                "Tariff revenue",
+                                                "Consumption tax revenue",
+                                                "Material tax revenue",
+                                                "Labor tax revenue"),
+                                  Value = c((data$VAn.hat[CTF_country]-1)*100,
+                                           (data$R.p.hat[CTF_country]-1)*100,
+                                           (data$R.t.hat[CTF_country]-1)*100,
+                                           (data$R.c.hat[CTF_country]-1)*100,
+                                           (data$R.m.hat[CTF_country]-1)*100,
+                                           (data$R.l.hat[CTF_country]-1)*100),
+                                 CTF = CTF1[ctf]))
+
+  In_tilde <- rbind(In_tilde,
+                    data.frame(Category = c("Value Added", 
+                                            "Deficits",
+                                            "Production tax revenue", 
+                                            "Tariff revenue",
+                                            "Consumption tax revenue",
+                                            "Material tax revenue",
+                                            "Labor tax revenue"),
+                               Value = c((data$VAn[CTF_country]),
+                                         (data$Dn[CTF_country]),
+                                         (data$R.p[CTF_country]),
+                                         (data$R.t[CTF_country]),
+                                         (data$R.c[CTF_country]),
+                                         (data$R.m[CTF_country]),
+                                         (data$R.l[CTF_country])),
+                               CTF = CTF1[ctf]))
+  
+  In_hat <- rbind(In_hat,
+                  data.frame(Category = c("Nominal", "Real"),
+                             Value = c((data$In.tilde.hat[CTF_country]-1)*100,
+                                       (data$RI.hat[CTF_country]-1)*100),
+                             CTF = CTF1[ctf]))
+
+  P_hat <- rbind(P_hat,
+                 data.frame(Sectors = sectors$code,
+                            Value = (data$P.hat[,CTF_country]-1)*100,
+                            CTF = CTF1[ctf]))
+  Pn_hat <- rbind(Pn_hat,
+                 data.frame(Value = (data$Pn.hat[CTF_country]-1)*100,
+                            CTF = CTF1[ctf]))
+
+  national_emissions_hat <- rbind(national_emissions_hat,
+                                  data.frame(
+                                    Category = c("CO2", "GHG"),
+                                    Value = c((data$national.emissions.CO2.hat[CTF_country]-1)*100,
+                                              (data$national.emissions.GHG.hat[CTF_country]-1)*100),
+                                    CTF = CTF1[ctf]))
+
+  emissions_hat <- rbind(emissions_hat,
+                         data.frame(Sectors = sectors$code,
+                                    Value = (data$emissions.hat[,CTF_country]-1)*100,
+                                    CTF = CTF1[ctf]))
+
+  W_hat <- rbind(W_hat,
+                 data.frame(
+                   Category = "GHG",
+                   Value = (data$W.hat.GHG[CTF_country]-1)*100,
+                   CTF = CTF1[ctf]))
+  
+  M_hat <- rbind(M_hat,
+                  data.frame(
+                    sectors = sectors$code,
+                    Imports = (data$M.hat[, CTF_country]-1)*100,
+                    CTF = CTF1[ctf]
+                  ))
+
+  E_hat <- rbind(E_hat,
+                  data.frame(
+                    sectors = sectors$code,
+                    Exports = (data$GO.hat[, CTF_country]-1)*100,
+                    CTF = CTF1[ctf]
+                  ))
+  M_country_hat <-
+    data.frame(countries = countries$code,
+               Imports = (data$M.E.hat[CTF_country,]-1)*100,
+               CTF = CTF1[ctf])
+  
+  M_country_hat <- merge(M_country_hat, world, by.x="countries", by.y="new_country", all.y=T)
+  M_country_hat <- st_as_sf(M_country_hat, sf_column_name = "geometry")
+  M_country_hat_plot[[ctf]] <-
+  ggplot(data=M_country_hat) +
+    geom_sf(aes(fill = Imports)) +
+    theme_minimal() +
+    ggtitle(paste0(countries$country[CTF_country], " % change in imports by country: ", CTF1[ctf])) +
+    scale_fill_viridis_c(option = "cividis")
+  
+  E_country_hat <-
+  data.frame(countries = countries$code,
+             Exports = (data$M.E.hat[,CTF_country]-1)*100,
+             CTF = CTF1[ctf])
+  E_country_hat <- merge(E_country_hat, world, by.x="countries", by.y="new_country", all.y=T)
+  E_country_hat <- st_as_sf(E_country_hat, sf_column_name = "geometry")
+  E_country_hat_plot[[ctf]] <-
+  ggplot(data=E_country_hat) +
+    geom_sf(aes(fill = Exports)) +
+    theme_minimal() +
+    ggtitle(paste0(countries$country[CTF_country], " % change in exports by country: ", CTF1[ctf])) +
+    scale_fill_viridis_c(option = "cividis")
+
+}
+
+
+```
+
+## Income
+
+```{r, echo = F, message=F, fig.width=14}
+In_tilde_hat$CTF <- factor(In_tilde_hat$CTF, levels = CTF1)
+ggplot(In_tilde_hat, aes(x = CTF, y = Value, fill = Category)) +
+  geom_bar(stat = "identity", position=position_dodge(), width = 0.5) +
+  scale_fill_brewer(palette = "RdYlBu") +
+  labs(fill = "", y = "Income", x = "",
+       title = paste0(countries$country[CTF_country], " % change in income source by CTF")) +
+  theme_hc()
+
+```
+
+```{r, echo = F, message=F, fig.width=14}
+In_tilde_BAU$CTF = factor("Baseline")
+In_tilde <- rbind(In_tilde, In_tilde_BAU)
+# Income in levels from each counterfactual
+In_tilde$CTF <- factor(In_tilde$CTF, levels = c(factor("Baseline"), CTF1))
+if (data$Dn.BAU[CTF_country] < 0){
+  In_tilde_total <- sum(In_tilde_BAU$Value) - data$Dn.BAU[CTF_country]
+} else {
+  In_tilde_total <- sum(In_tilde_BAU$Value)
+}
+
+ggplot(In_tilde, aes(x = CTF, y = Value, fill = Category)) +
+  geom_bar(stat = "identity", width = 0.5) +
+  geom_hline(yintercept =  In_tilde_total) +
+  scale_fill_brewer(palette = "RdYlBu") +
+  theme(axis.text.x = element_text(angle = 25, vjust = .5)) +
+  labs(
+    fill = "",
+    y = "Value",
+    x = "",
+    title = paste0(countries$country[CTF_country], " income source by CTF")
+  ) +
+  theme_hc()
+
+# Change in total income from each counterfactual
+ggplot(In_hat, aes(x = CTF, y = Value, fill = Category)) +
+  geom_bar(stat = "identity",
+           position = position_dodge(),
+           width = 0.5) +
+  scale_fill_manual(values = c("#D73027", "#4575B4")) +
+  theme(axis.text.x = element_text(angle = 25, vjust = .5)) +
+  labs(
+    y = "% Change in income",
+    x = "",
+    title = paste0(countries$country[CTF_country], " % change in income by CTF")
+  ) +
+  theme_hc()
+
+```
+
+## Prices
+
+```{r, echo=F, fig.width=14}
+
+ggplot(Pn_hat, aes(x = CTF, y = Value)) +
+    geom_bar(stat = "identity", width = 0.5, fill="#4575b4") +
+    labs(y = "% Change in final price index", x = "",
+         title = paste0(countries$country[CTF_country], " % change in final price index by CTF")) +
+    theme_hc()
+```
+
+```{r, echo=F, fig.width=14, fig.height=8}
+ggplot(P_hat, aes(x = Sectors, y = Value, fill = CTF)) +
+  geom_bar(stat = "identity", position=position_dodge(), width = 0.5) +
+  scale_fill_brewer(palette = "RdYlBu") +
+  labs(fill = "", y = "% Change in sectoral price index", x = "",
+       title = paste0(countries$country[CTF_country], " % change in sectoral price index by CTF")) +
+  theme_hc()
+```
+
+## Trade flows
+
+```{r, echo=F, fig.width=14, fig.height=10, warning = F}
+
+M_hat_plot <- 
+ggplot(M_hat, aes(x = sectors, y = Imports, fill = CTF)) +
+  geom_bar(stat = "identity", position=position_dodge(), width = 0.5) +
+  scale_fill_brewer(palette = "RdYlBu") +
+  labs(fill = "", y = "% Change in imports", x = "",
+       title = paste0(countries$country[CTF_country], " % change in trade flows by CTF")) +
+  guides(fill = "none") +
+  theme_hc()
+
+E_hat_plot <- 
+ggplot(E_hat, aes(x = sectors, y = Exports, fill = CTF)) +
+  geom_bar(stat = "identity", position=position_dodge(), width = 0.5) +
+  scale_fill_brewer(palette = "RdYlBu") +
+  labs(fill = "", y = "% Change in exports", x = "",
+       title = paste0(countries$country[CTF_country], " ")) +
+  theme_hc()
+
+wrap_plots(CTF_plot_bounds(list(M_hat_plot, E_hat_plot)), ncol=1)
+```
+
+### % Change in imports
+
+```{r, echo=F, fig.width=14, fig.height=14}
+wrap_plots(M_country_hat_plot, ncol = 2)
+```
+
+### % Change in exports 
+
+```{r, echo=F, fig.width=14, fig.height=14}
+wrap_plots(E_country_hat_plot, ncol=2)
+```
+
+## Emissions
+
+```{r, echo=F, fig.width=14}
+# % Change in national emissions
+
+ggplot(national_emissions_hat, aes(x = CTF, y = Value, fill = Category)) +
+  geom_bar(stat = "identity", position = position_dodge(), width = 0.5) +
+  scale_fill_manual(values = c("#D73027","#4575B4")) +
+  labs(fill = "", y = "% Change in emissions MtCO2", x = "",
+       title = paste0(countries$country[CTF_country], " % change in emissions by CTF and type")) +
+  theme_hc()
+
+
+ggplot(emissions_hat, aes(x = Sectors, y = Value, fill = CTF)) +
+  geom_bar(stat = "identity", position = position_dodge(), width = 0.5) +
+  scale_fill_brewer(palette = "RdYlBu") +
+  labs(fill = "", y = "% Change in emissions MtCO2", x = "",
+       title = paste0(countries$country[CTF_country], " % change in emissions by CTF and sector")) +
+  theme_hc()
+
+
+```
+
+## Welfare
+
+```{r, echo=F, fig.width=14}
+# % Change in welfare
+ggplot(W_hat, aes(x = CTF, y = Value)) +
+  geom_bar(stat = "identity", position = position_dodge(), width = 0.5, fill = "#4575B4") +
+  labs(y = "% Change in welfare", x = "",
+       title = paste0(countries$country[CTF_country], " % change in welfare by CTF")) +
+    theme_hc()
+```
+
+# Part 2
+
+```{r, echo=F, fig.width=12}
+CTF_part2 <-
+  list.files(file.path(
+    OUTPUT,
+    "quantitative",
+    substr(version, nchar(version) - 1,
+           nchar(version)),
+    toString(CTF_country),
+    "country_sample_part2"
+  ))
+
+contains_carbon_price <- sapply(CTF_part2, function(x) grepl("{carbon}", x))
+CTF_part2 <- CTF_part2[contains_carbon_price]
+
+CTF_part2 <- c("CTF5_{carbon}_EITE_CO2_country_sample.mat", CTF_part2) # Includes CTF 5
+
+
+
+
+In_hat <- c()
+In_tilde <- c() # Income in levels from each counterfactual
+In_tilde_hat <- c() # Income in levels from each counterfactual
+RI_hat <- c() # Change in real income
+P_hat <- c() # Change in sectoral price index
+Pn_hat <- c()
+national_emissions_hat <- c() # Change in national emissions
+emissions_hat <- c() # Change in emissions by sectors
+emissions_hat_plot <- c()
+W_hat <- c()
+M_hat <- c() # Change in imports
+E_hat <- c() # Change in exports
+M_country_hat_plot <- c() # Change in imports and exports by country
+E_country_hat_plot <- c()
+
+for (ctf in c(1:length(CTF_part2))){
+
+  if (ctf == 1){
+    data <- readMat(file.path(
+      OUTPUT,
+      "quantitative",
+      substr(version, nchar(version) - 1, nchar(version)),
+      CTF_part2[ctf]
+    ))
+  } else {
+    data <- readMat(file.path(OUTPUT, "quantitative", 
+                              substr(version, nchar(version)-1, nchar(version)),
+                              toString(CTF_country),
+                              "country_sample_part2",
+                              CTF_part2[ctf]))
+  }
+
+  # Creating income decomposition from the baseline
+  In_tilde_hat <-rbind(In_tilde_hat,
+                       data.frame(Category = c("Value Added", 
+                                               "Production tax revenue", 
+                                                "Tariff revenue",
+                                                "Consumption tax revenue",
+                                                "Material tax revenue",
+                                                "Labor tax revenue"),
+                                  Value = c((data$VAn.hat[CTF_country]-1)*100,
+                                           (data$R.p.hat[CTF_country]-1)*100,
+                                           (data$R.t.hat[CTF_country]-1)*100,
+                                           (data$R.c.hat[CTF_country]-1)*100,
+                                           (data$R.m.hat[CTF_country]-1)*100,
+                                           (data$R.l.hat[CTF_country]-1)*100),
+                                 CTF = CTF2[ctf]))
+
+  In_tilde <- rbind(In_tilde,
+                    data.frame(Category = c("Value Added", 
+                                            "Deficits",
+                                            "Production tax revenue", 
+                                            "Tariff revenue",
+                                            "Consumption tax revenue",
+                                            "Material tax revenue",
+                                            "Labor tax revenue"),
+                               Value = c((data$VAn[CTF_country]),
+                                         (data$Dn[CTF_country]),
+                                         (data$R.p[CTF_country]),
+                                         (data$R.t[CTF_country]),
+                                         (data$R.c[CTF_country]),
+                                         (data$R.m[CTF_country]),
+                                         (data$R.l[CTF_country])),
+                               CTF = CTF2[ctf]))
+  
+  In_hat <- rbind(In_hat,
+                  data.frame(Category = c("Nominal", "Real"),
+                             Value = c((data$In.tilde.hat[CTF_country]-1)*100,
+                                       (data$RI.hat[CTF_country]-1)*100),
+                             CTF = CTF2[ctf]))
+
+  P_hat <- rbind(P_hat,
+                 data.frame(Sectors = sectors$code,
+                            Value = (data$P.hat[,CTF_country]-1)*100,
+                            CTF = CTF2[ctf]))
+  Pn_hat <- rbind(Pn_hat,
+                 data.frame(Value = (data$Pn.hat[CTF_country]-1)*100,
+                            CTF = CTF2[ctf]))
+
+  national_emissions_hat <- rbind(national_emissions_hat,
+                                  data.frame(
+                                    Category = c("CO2", "GHG"),
+                                    Value = c((data$national.emissions.CO2.hat[CTF_country]-1)*100,
+                                              (data$national.emissions.GHG.hat[CTF_country]-1)*100),
+                                    CTF = CTF2[ctf]))
+
+  emissions_hat <- rbind(emissions_hat,
+                         data.frame(Sectors = sectors$code,
+                                    Value = (data$emissions.hat[,CTF_country]-1)*100,
+                                    CTF = CTF2[ctf]))
+
+  W_hat <- rbind(W_hat,
+                 data.frame(
+                   Category = "GHG",
+                   Value = (data$W.hat.GHG[CTF_country]-1)*100,
+                   CTF = CTF2[ctf]))
+  
+  M_hat <- rbind(M_hat,
+                  data.frame(
+                    sectors = sectors$code,
+                    Imports = (data$M.hat[, CTF_country]-1)*100,
+                    CTF = CTF2[ctf]
+                  ))
+  
+  E_hat <- rbind(E_hat,
+                  data.frame(
+                    sectors = sectors$code,
+                    Exports = (data$GO.hat[, CTF_country]-1)*100,
+                    CTF = CTF2[ctf]
+                  ))
+  M_country_hat <-
+    data.frame(countries = countries$code,
+               Imports = (data$M.E.hat[CTF_country,]-1)*100,
+               CTF = CTF2[ctf])
+  M_country_hat <- merge(M_country_hat, world, by.x="countries", by.y="new_country", all.y=T)
+  M_country_hat <- st_as_sf(M_country_hat, sf_column_name = "geometry")
+  M_country_hat_plot[[ctf]] <-
+  ggplot(data=M_country_hat) +
+    geom_sf(aes(fill = Imports)) +
+    theme_minimal() +
+    ggtitle(paste0(countries$country[CTF_country], " % change in imports by country: ", CTF2[ctf])) +
+    scale_fill_viridis_c(option = "cividis")
+  
+  E_country_hat <-
+  data.frame(countries = countries$code,
+             Exports = (data$M.E.hat[,CTF_country]-1)*100,
+             CTF = CTF2[ctf])
+  E_country_hat <- merge(E_country_hat, world, by.x="countries", by.y="new_country", all.y=T)
+  E_country_hat <- st_as_sf(E_country_hat, sf_column_name = "geometry")
+  E_country_hat_plot[[ctf]] <-
+  ggplot(data=E_country_hat) +
+    geom_sf(aes(fill = Exports)) +
+    theme_minimal() +
+    ggtitle(paste0(countries$country[CTF_country], " % change in exports by country: ", CTF2[ctf])) +
+    scale_fill_viridis_c(option = "cividis")
+
+}
+
+```
+
+## Income
+
+```{r, echo = F, message=F, fig.width=12}
+
+ggplot(In_tilde_hat, aes(x = CTF, y = Value, fill = Category)) +
+  geom_bar(stat = "identity", position=position_dodge(), width = 0.5) +
+  scale_fill_brewer(palette = "RdYlBu") +
+  labs(fill = "", y = "Income", x = "",
+       title = paste0(countries$country[CTF_country], " % change in income source by CTF")) +
+  theme_hc()
+
+```
+
+```{r, echo = F, message=F, fig.width=12}
+In_tilde_BAU$CTF = "Baseline"
+In_tilde <- rbind(In_tilde, In_tilde_BAU)
+# Income in levels from each counterfactual
+In_tilde$CTF <- factor(In_tilde$CTF, levels = c(factor("Baseline"), CTF2))
+if (data$Dn.BAU[CTF_country] < 0){
+  In_tilde_total <- sum(In_tilde_BAU$Value) - data$Dn.BAU[CTF_country]
+} else {
+  In_tilde_total <- sum(In_tilde_BAU$Value)
+}
+
+ggplot(In_tilde, aes(x = CTF, y = Value, fill = Category)) +
+    geom_bar(stat = "identity", width = 0.5) +
+    geom_hline(yintercept =  In_tilde_total) +
+    scale_fill_brewer(palette = "RdYlBu") +
+    labs(fill = "Category", y = "Value", x = "Income source by CTF",
+         title = paste0(countries$country[CTF_country], " income source by CTF")) +
+    theme_hc()
+
+# Change in total income from each counterfactual
+
+ggplot(In_hat, aes(x = CTF, y = Value, fill = Category)) +
+    geom_bar(stat = "identity", position = position_dodge(), width = 0.5) +
+    scale_fill_manual(values = c("#D73027","#4575B4")) +
+    labs(y = "% Change in income", x = "", fill = "",
+         title = paste0(countries$country[CTF_country], " % change in income by CTF")) +
+    theme_hc()
+
+```
+
+## Prices
+
+```{r, echo=F, fig.width=14}
+
+ggplot(Pn_hat, aes(x = CTF, y = Value)) +
+    geom_bar(stat = "identity", width = 0.5, fill="#4575b4") +
+    labs(y = "% Change in final price index", x = "",
+         title = paste0(countries$country[CTF_country], " % change in final price index by CTF")) +
+    theme_hc()
+```
+
+```{r, echo=F, fig.width=14, fig.height=8}
+ggplot(P_hat, aes(x = Sectors, y = Value, fill = CTF)) +
+  geom_bar(stat = "identity", position=position_dodge(), width = 0.5) +
+  scale_fill_brewer(palette = "RdYlBu") +
+  labs(fill = "", y = "% Change in sectoral price index", x = "",
+       title = paste0(countries$country[CTF_country], " % change in sectoral price index by CTF")) +
+  theme_hc()
+```
+
+## Trade flows
+
+```{r, echo=F, fig.width=14, fig.height=10, warning=FALSE}
+M_hat_plot <- 
+ggplot(M_hat, aes(x = sectors, y = Imports, fill = CTF)) +
+  geom_bar(stat = "identity", position=position_dodge(), width = 0.5) +
+  scale_fill_brewer(palette = "RdYlBu") +
+  labs(fill = "", y = "% Change in imports", x = "",
+       title = paste0(countries$country[CTF_country], " % change in trade flows by CTF")) +
+  guides(fill=F) +
+  theme_hc()
+
+E_hat_plot <- 
+ggplot(E_hat, aes(x = sectors, y = Exports, fill = CTF)) +
+  geom_bar(stat = "identity", position=position_dodge(), width = 0.5) +
+  scale_fill_brewer(palette = "RdYlBu") +
+  labs(fill = "", y = "% Change in exports", x = "") +
+  theme_hc()
+
+wrap_plots(CTF_plot_bounds(list(M_hat_plot, E_hat_plot)), ncol=1)
+```
+
+### % Change in imports
+
+```{r, echo=F, fig.width=12, fig.height=12}
+wrap_plots(M_country_hat_plot, ncol = 1)
+```
+
+### % Change in exports 
+
+```{r, echo=F, fig.width=12, fig.height=12}
+wrap_plots(E_country_hat_plot, ncol=1)
+```
+
+## Emissions
+
+```{r, echo=F, fig.width=14}
+# % Change in national emissions
+
+ggplot(national_emissions_hat, aes(x = CTF, y = Value, fill = Category)) +
+  geom_bar(stat = "identity", position = position_dodge(), width = 0.5) +
+  scale_fill_manual(values = c("#D73027","#4575B4")) +
+  labs(fill = "", y = "% Change in emissions MtCO2", x = "",
+       title = paste0(countries$country[CTF_country], " % change in emissions by CTF and type")) +
+  theme_hc()
+
+
+ggplot(emissions_hat, aes(x = Sectors, y = Value, fill = CTF)) +
+  geom_bar(stat = "identity", position = position_dodge(), width = 0.5) +
+  scale_fill_brewer(palette = "RdYlBu") +
+  labs(fill = "", y = "% Change in emissions MtCO2", x = "",
+       title = paste0(countries$country[CTF_country], " % change in emissions by CTF and sector")) +
+  theme_hc()
+
+
+```
+
+## Welfare
+
+```{r, echo=F, fig.width=12}
+# % Change in welfare
+ggplot(W_hat, aes(x = CTF, y = Value)) +
+  geom_bar(stat = "identity", position = position_dodge(), width = 0.5, fill = "#4575B4") +
+  scale_fill_brewer(palette = "RdYlBu") +
+  labs(y = "% Change in welfare", x = "",
+       title = paste0(countries$country[CTF_country], " % change in welfare by CTF")) +
+    theme_hc()
+```
+
+
