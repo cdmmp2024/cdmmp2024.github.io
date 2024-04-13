@@ -303,7 +303,7 @@ CTF_part1 <-
   ))
 contains_carbon_price <- sapply(CTF_part1, function(x) grepl("{carbon}", x))
 CTF_part1 <- CTF_part1[contains_carbon_price]
-
+CTF_part1 <- CTF_part1[c(1,2,4,6,3,5)]
 In_hat <- c()
 In_tilde <- c() # Income in levels from each counterfactual
 In_tilde_hat <- c() # Income in levels from each counterfactual

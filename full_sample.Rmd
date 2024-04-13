@@ -209,8 +209,9 @@ CTF_part1 <-
   ))
 contains_carbon_price <- sapply(CTF_part1, function(x) grepl("{carbon}", x))
 CTF_part1 <- CTF_part1[contains_carbon_price]
-
+CTF_part1 <- CTF_part1[c(1,2,4,6,3,5)]
 for (ctf in c(1:length(CTF_part1))) {
+# for (ctf in c(3,4,5)) {
   data <- readMat(file.path(
     OUTPUT,
     "quantitative",
