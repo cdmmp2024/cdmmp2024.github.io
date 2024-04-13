@@ -4,7 +4,9 @@ author: "CDMMP"
 output: 
   html_document:
       toc: true
-      toc_float: true
+      toc_float: 
+        collapsed: false
+      css: "style.css"
   
 ---
 ```{r setup, include=FALSE}
@@ -136,21 +138,25 @@ Our counterfactuals are split into two parts.
 
 **Part 1**
 
-CTF1: Setting tariffs to bilateral mean (Shapiro)
+In Part 1, we examine the impact of four distinct counterfactuals across our sample of 48 countries. For each country, we apply each counterfactual holding all else constant. We then compile and report the results for each country and counterfactual scenario.
 
-CTF2: Setting tariffs to OECD mean
+CTF1: Setting tariffs in each sector to bilateral mean (Shapiro)
 
-CTF3: Carbon policy
+CTF2: Setting MFN tariffs in each sector to the OECD mean
 
-CTF4: Carbon policy + CBAM
+CTF3: Changing domestic tax policy to incorporate a carbon tax on production
+
+CTF4: Changing domestic tax and international trade policy to incorporate a carbon tax on production and imports
 
 **Part 2** 
 
-CTF5: Large country coalition
+In Part 2, we implement the same strategy as in Part 1 except for counterfactual 5. For counterfactual 5, we examine how the coalition impacts all countries in our sample simultaneously and report those results.
 
-CTF6: Large country coalition + developing country respond with equivalence
+CTF5: The US, EU, and CHN form a coalition and implement a carbon tax on domestic production and tariff on imports.
 
-CTF7: Large country coalition + developing country respond without equivalence
+CTF6: The US, EU, and CHN form a coalition and implement a carbon tax on domestic production and tariff on imports. 
+
+CTF7: The US, EU, and CHN form a coalition and implement a carbon tax on domestic production and tariff on imports.
 
 ```{r, include=FALSE, warning=F}
 # Loading ID data
@@ -288,6 +294,8 @@ EMISSIONS <-
 
 ## Welfare
 
+The figure below reports the distribution of percent changes in welfare for each country in our sample after implementing the counterfactual policy.
+
 ```{r, echo=F, fig.width=12, warning=F}
 WELFARE_PLOT <-
   ggplot(WELFARE, aes(x = name, y = value)) +
@@ -317,7 +325,7 @@ outlier_annotations <- Outliers(WELFARE, WELFARE_PLOT)
 
 ```
 
-
+The figure below reports the distribution of percent changes in welfare for each country in our sample grouped by region after implementing the counterfactual policy.
 
 ```{r, echo=F, fig.width=10, fig.height=10, warning=F}
 WELFARE_REGION_PLOT <-
@@ -360,6 +368,8 @@ outlier_annotations <- Outliers(WELFARE, WELFARE_REGION_PLOT)
 
 ## Trade flows
 
+The figure below reports the distribution of percent changes in trade flows for each country in our sample after implementing the counterfactual policy.
+
 ```{r, echo=FALSE, fig.width=10, fig.height=10, warning=F}
 TRADE_FLOWS_PLOT <-
 ggplot(TRADE_FLOWS, aes(x = interaction(trade_flow,name), y = value, fill = trade_flow)) +
@@ -387,6 +397,8 @@ outlier_annotations <- Outliers(TRADE_FLOWS, TRADE_FLOWS_PLOT)
 
 ```
 
+The figure below reports the distribution of percent changes in exports for each country in our sample grouped by region after implementing the counterfactual policy.
+
 ```{r, echo = F, fig.width=10, fig.height=10, warning=F}
 EXPORTS_PLOT <-
 ggplot(EXPORTS, aes(x = interaction(group, name), y = value, fill = group)) +
@@ -409,8 +421,11 @@ outlier_annotations <- Outliers(EXPORTS, EXPORTS_PLOT)
                     min.segment.length = unit(0, 'lines'),
                     size = 3) +
     scale_x_discrete(labels = rep(c("Africa", "Eurasia", "LAC"), length(CTF_part1))))
+```
 
+The figure below reports the distribution of percent changes in imports for each country in our sample grouped by region after implementing the counterfactual policy.
 
+```{r, echo = F, fig.width=10, fig.height=10, warning=F}
 IMPORTS_PLOT <-
 ggplot(IMPORTS, aes(x = interaction(group, name), y = value, fill = group)) +
   geom_boxplot(outlier.shape = 1, width=.5) +
@@ -435,6 +450,10 @@ outlier_annotations <- Outliers(IMPORTS, IMPORTS_PLOT)
 
 ```
 
+## Emissions
+
+The figure below reports the distribution of percent changes in GHG emissions for each country in our sample after implementing the counterfactual policy.
+
 ```{r, echo = F, fig.width=12, warning=F}
 EMISSIONS_PLOT <-
 ggplot(EMISSIONS, aes(x = name, y = value)) +
@@ -443,6 +462,7 @@ ggplot(EMISSIONS, aes(x = name, y = value)) +
   labs(x = "",
        y = "Change in GHG emissions (%)",
        title = "% Change in GHG emissions by counterfactual") +
+  theme(axis.text.x = element_text(angle = 25)) + 
   theme_hc()
 
 outlier_annotations <- Outliers(EMISSIONS, EMISSIONS_PLOT)
@@ -456,7 +476,7 @@ outlier_annotations <- Outliers(EMISSIONS, EMISSIONS_PLOT)
                     size = 3))
 ```
 
-## Emissions
+The figure below reports the distribution of percent changes in GHG emissions for each country in our sample grouped by region after implementing the counterfactual policy.
 
 ```{r, echo = F, fig.width=10, fig.height=10, warning=F}
 EMISSIONS_REGIONS_PLOT <-
@@ -712,6 +732,8 @@ EMISSIONS <-
 
 ## Welfare
 
+The figure below reports the distribution of percent changes in welfare for each country in our sample after implementing the counterfactual policy.
+
 ```{r, echo=F, fig.width=12, warning=F}
 WELFARE_PLOT <-
   ggplot(WELFARE, aes(x = name, y = value)) +
@@ -737,7 +759,11 @@ outlier_annotations <- Outliers(WELFARE, WELFARE_PLOT)
       size = 3
     )
 )
+```
 
+The figure below reports the distribution of percent changes in welfare for each country in our sample grouped by region after implementing the counterfactual policy.
+
+```{r, echo=F, fig.width=12, warning=F}
 
 WELFARE_REGION_PLOT <-
   ggplot(WELFARE, aes(
@@ -776,6 +802,8 @@ outlier_annotations <- Outliers(WELFARE, WELFARE_REGION_PLOT)
 )
 ```
 
+The bars in the figure below represent the percent changes in welfare for each country due to the formation of the coalition. The corresponding dot and triangle represent the changes in welfare given each country's were to respond with and without equivalence respectively. 
+
 ```{r, echo=FALSE, fig.width=12, warning=F}
 ggplot(WELFARE[WELFARE$name == "No Response", ], aes(x = reorder(code, value), y = value)) +
   geom_bar(stat = "identity", fill="darkgray") +
@@ -784,7 +812,11 @@ ggplot(WELFARE[WELFARE$name == "No Response", ], aes(x = reorder(code, value), y
   labs(x = "", y = "Welfare change %", shape = "", title = "% Change in welfare by counterfactual and country") + 
   theme(axis.text.x = element_text(angle = 25)) + 
   theme_hc()
+```
 
+The figure below compares the percent changes in welfare for each country given how they respond to the formation of the coalition.
+
+```{r, echo=FALSE, fig.width=12, warning=F}
 
 WELFARE_SCATTER <- pivot_wider(WELFARE[WELFARE$name != "No Response", ])
 
@@ -798,6 +830,8 @@ ggplot(WELFARE_SCATTER) +
 ```
 
 ## Trade flows
+
+The figure below reports the distribution of percent changes in trade flows for each country in our sample after implementing the counterfactual policy.
 
 ```{r, echo=FALSE, fig.width=10, fig.height=10, warning=F}
 TRADE_FLOWS_PLOT <-
@@ -822,8 +856,11 @@ outlier_annotations <- Outliers(TRADE_FLOWS, TRADE_FLOWS_PLOT)
                     min.segment.length = unit(0, 'lines'),
                     size = 3)) +
   scale_x_discrete(labels = rep(c("Exports", "Imports", length(CTF_part2))))
+```
 
+The figure below reports the distribution of percent changes in trade flows to partners within and outside of the coalition for each country in our sample after implementing the counterfactual policy.
 
+```{r, echo=FALSE, fig.width=10, fig.height=10, warning=F}
 (TRADE_FLOWS_COALITION_PLOT <-
 ggplot(TRADE_FLOWS_COALITION, aes(x = name, y = value, fill = trade_flow)) +
   geom_boxplot(outlier.shape = 1, width=.5) +
@@ -841,6 +878,8 @@ ggplot(TRADE_FLOWS_COALITION, aes(x = name, y = value, fill = trade_flow)) +
 
 ```
 
+The figure below reports the distribution of percent changes in exports for each country in our sample grouped by region after implementing the counterfactual policy.
+
 ```{r, echo = F, fig.width=12, warning=F}
 EXPORTS_PLOT <-
 ggplot(EXPORTS, aes(x = interaction(group, name), y = value, fill = group)) +
@@ -855,6 +894,7 @@ ggplot(EXPORTS, aes(x = interaction(group, name), y = value, fill = group)) +
   theme_hc()
 outlier_annotations <- Outliers(EXPORTS, EXPORTS_PLOT)
 
+
 (EXPORTS_PLOT<-
   EXPORTS_PLOT +
     geom_text_repel(data = outlier_annotations,
@@ -864,7 +904,11 @@ outlier_annotations <- Outliers(EXPORTS, EXPORTS_PLOT)
                     size = 3) +
     scale_x_discrete(labels = rep(c("Africa", "Eurasia", "LAC"), length(CTF_part2))))
 
+```
 
+The figure below reports the distribution of percent changes in exports for each country in our sample grouped by region after implementing the counterfactual policy.
+
+```{r, echo = F, fig.width=12, warning=F}
 IMPORTS_PLOT <-
 ggplot(IMPORTS, aes(x = interaction(group, name), y = value, fill = group)) +
   geom_boxplot(outlier.shape = 1, width=.5) +
@@ -891,11 +935,14 @@ outlier_annotations <- Outliers(IMPORTS, IMPORTS_PLOT)
 
 ## Emissions 
 
+The figure below reports the distribution of percent changes in GHG emissions for each country in our sample after implementing the counterfactual policy.
+
 ```{r, echo = F, fig.width=12}
 EMISSIONS_PLOT <-
 ggplot(EMISSIONS, aes(x = name, y = value)) +
   geom_boxplot(fill = "gray", width = 0.5, outlier.shape = 1) +
   geom_hline(yintercept = 0, linetype = "dashed") +
+  theme(axis.text.x = element_text(angle = 25)) + 
   labs(x = "",
        y = "Change in GHG emissions (%)",
        title = "% Change in GHG emissions by counterfactual") +
@@ -911,6 +958,13 @@ outlier_annotations <- Outliers(EMISSIONS, EMISSIONS_PLOT)
                     min.segment.length = unit(0, 'lines'),
                     size = 3))
 
+```
+
+
+The figure below reports the distribution of percent changes in GHG emissions for each country in our sample grouped by region after implementing the counterfactual policy.
+
+
+```{r, echo = F, fig.width=12}
 EMISSIONS_REGIONS_PLOT <-
 ggplot(EMISSIONS, aes(x = interaction(group, name), y = value, fill = group)) +
   geom_boxplot(outlier.shape = 1, width=.5) +

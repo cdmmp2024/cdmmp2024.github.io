@@ -268,7 +268,7 @@ ggplot(alphas, aes(x = Sectors, y = Value)) +
 
 ## Emissions
 
-This section describes the level of emissions in {country} from the baseline. There are four greenhouse gasses we consider: CO2, CH4, N2O, and FGAS.The first graph represents the level of emissions by dissaggregated sector and type. The second graph depicts the emissions intensities (tons of CO2 equivalent per dollar produced) due to CO2 and from all GHG. 
+This section describes the level of emissions in {country} from the baseline. There are four greenhouse gasses we consider: CO2, CH4, N2O, and FGAS.The figure below reports the level of emissions disaggregated sector and type.  
 
 ```{r, echo=F, fig.width=12, message=F}
 ggplot(emissions_BAU, aes(x = Sectors, y = value, fill = name)) +
@@ -277,7 +277,11 @@ ggplot(emissions_BAU, aes(x = Sectors, y = value, fill = name)) +
   labs(fill = "Emission type", y = "Emissions (MtCO2)", x = "Sectors",
        title = paste0(countries$country[CTF_country], " Emissions by sector and type")) +
   theme_hc()
+```
 
+The figure below depicts the emissions intensities (tons of CO2 equivalent per dollar produced) from the combustion of to CO2 and from all GHG in the production process.
+
+```{r, echo=F, fig.width=12, message=F}
 ggplot(intensity, aes(x = Sectors, y = value, fill = name)) +
   geom_bar(stat = "identity", position = position_dodge(), width = 0.5) +
   scale_fill_manual(values = c("#D73027","#4575B4")) +
@@ -286,10 +290,7 @@ ggplot(intensity, aes(x = Sectors, y = value, fill = name)) +
   theme_hc()
 ```
 
-
 # Part 1
-
-This section describes the results from the counterfactual analyses when applied to EITE sectors and only from CO2 emissions. 
 
 ```{r, echo=F, fig.width=12, message=F}
 CTF_part1 <- 
@@ -441,6 +442,8 @@ for (ctf in c(1:length(CTF_part1)[1])){
 
 ## Income
 
+The figure below reports the % changes in the sources of income for {country} under each counterfactual policy.
+
 ```{r, echo = F, message=F, fig.width=14}
 In_tilde_hat$CTF <- factor(In_tilde_hat$CTF, levels = CTF1)
 ggplot(In_tilde_hat, aes(x = CTF, y = Value, fill = Category)) +
@@ -451,6 +454,8 @@ ggplot(In_tilde_hat, aes(x = CTF, y = Value, fill = Category)) +
   theme_hc()
 
 ```
+
+The figure below reports how the income levels compare against the baseline level of income in {country} under each counterfactual policy.
 
 ```{r, echo = F, message=F, fig.width=14}
 In_tilde_BAU$CTF = factor("Baseline")
@@ -475,8 +480,12 @@ ggplot(In_tilde, aes(x = CTF, y = Value, fill = Category)) +
     title = paste0(countries$country[CTF_country], " income source by CTF")
   ) +
   theme_hc()
+```
 
-# Change in total income from each counterfactual
+The figure below reports the % change in real vs nominal income for {country} under each counterfactual policy.
+
+```{r, echo = F, message=F, fig.width=14}
+# Change in nominal and real income from each counterfactual
 ggplot(In_hat, aes(x = CTF, y = Value, fill = Category)) +
   geom_bar(stat = "identity",
            position = position_dodge(),
@@ -494,6 +503,8 @@ ggplot(In_hat, aes(x = CTF, y = Value, fill = Category)) +
 
 ## Prices
 
+The figure below reports the % change in the final price index for {country} under each counterfactual policy.
+
 ```{r, echo=F, fig.width=14}
 
 ggplot(Pn_hat, aes(x = CTF, y = Value)) +
@@ -502,6 +513,8 @@ ggplot(Pn_hat, aes(x = CTF, y = Value)) +
          title = paste0(countries$country[CTF_country], " % change in final price index by CTF")) +
     theme_hc()
 ```
+
+The figure below reports the % change in the sectoral price index for {country} under each counterfactual policy.
 
 ```{r, echo=F, fig.width=14, fig.height=8}
 ggplot(P_hat, aes(x = Sectors, y = Value, fill = CTF)) +
@@ -513,6 +526,8 @@ ggplot(P_hat, aes(x = Sectors, y = Value, fill = CTF)) +
 ```
 
 ## Trade flows
+
+The figure below reports the % change in the trade flows for {country} under each counterfactual policy.
 
 ```{r, echo=F, fig.width=14, fig.height=10, warning = F}
 
@@ -538,17 +553,23 @@ wrap_plots(CTF_plot_bounds(list(M_hat_plot, E_hat_plot)), ncol=1)
 
 ### % Change in imports
 
+The figure below reports the % change in the imports from each partner country for {country} under each counterfactual policy.
+
 ```{r, echo=F, fig.width=14, fig.height=14}
 wrap_plots(M_country_hat_plot, ncol = 2)
 ```
 
 ### % Change in exports 
 
+The figure below reports the % change in the exports to each partner country for {country} under each counterfactual policy.
+
 ```{r, echo=F, fig.width=14, fig.height=14}
 wrap_plots(E_country_hat_plot, ncol=2)
 ```
 
 ## Emissions
+
+The figure below reports the % change in the CO2 and GHG emissions for {country} under each counterfactual policy.
 
 ```{r, echo=F, fig.width=14}
 # % Change in national emissions
@@ -559,8 +580,11 @@ ggplot(national_emissions_hat, aes(x = CTF, y = Value, fill = Category)) +
   labs(fill = "", y = "% Change in emissions MtCO2", x = "",
        title = paste0(countries$country[CTF_country], " % change in emissions by CTF and type")) +
   theme_hc()
+```
 
+The figure below reports the % change in emissions for {country} under each counterfactual policy.
 
+```{r, echo=F, fig.width=14}
 ggplot(emissions_hat, aes(x = Sectors, y = Value, fill = CTF)) +
   geom_bar(stat = "identity", position = position_dodge(), width = 0.5) +
   scale_fill_brewer(palette = "RdYlBu") +
@@ -572,6 +596,8 @@ ggplot(emissions_hat, aes(x = Sectors, y = Value, fill = CTF)) +
 ```
 
 ## Welfare
+
+The figure below reports the % change in welfare for {country} under each counterfactual policy.
 
 ```{r, echo=F, fig.width=14}
 # % Change in welfare
@@ -745,6 +771,8 @@ for (ctf in c(1:length(CTF_part2))){
 
 ## Income
 
+The figure below reports the % changes in the sources of income for {country} under each counterfactual policy.
+
 ```{r, echo = F, message=F, fig.width=12}
 
 ggplot(In_tilde_hat, aes(x = CTF, y = Value, fill = Category)) +
@@ -755,6 +783,8 @@ ggplot(In_tilde_hat, aes(x = CTF, y = Value, fill = Category)) +
   theme_hc()
 
 ```
+
+The figure below reports how the income levels compare against the baseline level of income in {country} under each counterfactual policy.
 
 ```{r, echo = F, message=F, fig.width=12}
 In_tilde_BAU$CTF = "Baseline"
@@ -774,8 +804,13 @@ ggplot(In_tilde, aes(x = CTF, y = Value, fill = Category)) +
     labs(fill = "Category", y = "Value", x = "Income source by CTF",
          title = paste0(countries$country[CTF_country], " income source by CTF")) +
     theme_hc()
+```
 
-# Change in total income from each counterfactual
+
+The figure below reports the % change in real vs nominal income for {country} under each counterfactual policy.
+
+```{r, echo = F, message=F, fig.width=12}
+# Change in nominal vs real income from each counterfactual
 
 ggplot(In_hat, aes(x = CTF, y = Value, fill = Category)) +
     geom_bar(stat = "identity", position = position_dodge(), width = 0.5) +
@@ -788,6 +823,8 @@ ggplot(In_hat, aes(x = CTF, y = Value, fill = Category)) +
 
 ## Prices
 
+The figure below reports the % change in final price index for {country} under each counterfactual policy.
+
 ```{r, echo=F, fig.width=14}
 
 ggplot(Pn_hat, aes(x = CTF, y = Value)) +
@@ -796,6 +833,8 @@ ggplot(Pn_hat, aes(x = CTF, y = Value)) +
          title = paste0(countries$country[CTF_country], " % change in final price index by CTF")) +
     theme_hc()
 ```
+
+The figure below reports the % change in sectoral price index for {country} under each counterfactual policy.
 
 ```{r, echo=F, fig.width=14, fig.height=8}
 ggplot(P_hat, aes(x = Sectors, y = Value, fill = CTF)) +
@@ -807,6 +846,8 @@ ggplot(P_hat, aes(x = Sectors, y = Value, fill = CTF)) +
 ```
 
 ## Trade flows
+
+The figure below reports the % change in sectoral price index for {country} under each counterfactual policy.
 
 ```{r, echo=F, fig.width=14, fig.height=10, warning=FALSE}
 M_hat_plot <- 
@@ -830,17 +871,23 @@ wrap_plots(CTF_plot_bounds(list(M_hat_plot, E_hat_plot)), ncol=1)
 
 ### % Change in imports
 
+The figure below reports the % change in the imports from each partner country for {country} under each counterfactual policy.
+
 ```{r, echo=F, fig.width=12, fig.height=12}
 wrap_plots(M_country_hat_plot, ncol = 1)
 ```
 
 ### % Change in exports 
 
+The figure below reports the % change in the exports to each partner country for {country} under each counterfactual policy.
+
 ```{r, echo=F, fig.width=12, fig.height=12}
 wrap_plots(E_country_hat_plot, ncol=1)
 ```
 
 ## Emissions
+
+The figure below reports the % change in CO2 and GHG emissions for {country} under each counterfactual policy.
 
 ```{r, echo=F, fig.width=14}
 # % Change in national emissions
@@ -852,7 +899,11 @@ ggplot(national_emissions_hat, aes(x = CTF, y = Value, fill = Category)) +
        title = paste0(countries$country[CTF_country], " % change in emissions by CTF and type")) +
   theme_hc()
 
+```
 
+The figure below reports the % change in emissions for {country} under each counterfactual policy.
+
+```{r, echo=F, fig.width=14}
 ggplot(emissions_hat, aes(x = Sectors, y = Value, fill = CTF)) +
   geom_bar(stat = "identity", position = position_dodge(), width = 0.5) +
   scale_fill_brewer(palette = "RdYlBu") +
@@ -860,10 +911,11 @@ ggplot(emissions_hat, aes(x = Sectors, y = Value, fill = CTF)) +
        title = paste0(countries$country[CTF_country], " % change in emissions by CTF and sector")) +
   theme_hc()
 
-
 ```
 
 ## Welfare
+
+The figure below reports the % change in welfare for {country} under each counterfactual policy.
 
 ```{r, echo=F, fig.width=12}
 # % Change in welfare
